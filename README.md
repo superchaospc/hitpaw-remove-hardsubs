@@ -1,0 +1,95 @@
+# HitPaw Remove Hardsubs
+
+一个给 Claude Code 和 Codex 用的 skill：驱动 macOS 上的 HitPaw Edimakor，把视频里烧死的硬字幕去掉，然后验收成品。
+
+它解决的不是"怎么点 HitPaw"，而是三件人容易做错的事：**字幕到底在哪一行**、**任务跑完了结果在哪**、**擦干净了没有**。这三件每一件做错都要再花一次付费额度。
+
+## 它做什么
+
+- 用逐行边缘检测在**整幅画面高度**上定位字幕，输出每一帧的行区间，而不是靠肉眼看缩略图。
+- 把全片检出的行区间取并集，给出擦除带；或者在字幕位置太散时建议整帧擦除，并说明会损伤什么。
+- 以**后台模式**驱动 HitPaw，你的鼠标和当前窗口不受影响。只有系统文件对话框那一两秒需要键盘。
+- 任务完成后从 HitPaw 的本地日志里取回结果，包括 App 自己下载失败、卡片显示 "Failed to download" 的情况。
+- 对成品跑同一套检测，用"每一帧都没有检出"来证明覆盖完整，而不是抽查几张缩略图。
+
+## 前置条件
+
+- macOS，已安装并登录 **HitPaw Edimakor**。这是付费工具，每个任务消耗 AI 额度，本 skill 不会替你购买。
+- `ffmpeg` / `ffprobe`。
+- Python 3 与 `numpy`（只用于字幕行扫描）。
+- Claude Code 或 Codex，且具备桌面控制能力。没有的话 skill 会准备好素材和清单后停下，不会谎称已提交。
+
+## 安装
+
+```bash
+git clone https://github.com/superchaospc/hitpaw-remove-hardsubs.git \
+  ~/.claude/skills/hitpaw-remove-hardsubs
+```
+
+要让 Codex 也能自动触发，软链过去即可，两边是同一种 skill 格式：
+
+```bash
+ln -s ~/.claude/skills/hitpaw-remove-hardsubs ~/.codex/skills/hitpaw-remove-hardsubs
+```
+
+## 使用
+
+直接说人话就行，skill 会自己触发：
+
+- 「自动去掉这个视频的全部字幕。」
+- 「字幕在多个地方出现，帮我全画面去字并验收。」
+- 「HitPaw 已处理完成但一直卡在 Downloading，帮我取回。」
+- 「把 Downloads 里的三条视频逐个检查并去字幕。」
+
+脚本也可以单独用：
+
+```bash
+scripts/inspect-video.sh INPUT_VIDEO WORK_DIR   # 探测元数据 + 生成联系表
+scripts/fetch-result.sh [--wait] OUTPUT_MP4     # 从本地日志取回已完成的结果
+scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收
+```
+
+`fetch-result.sh --wait` 用于任务还在跑的时候等待，不带 `--wait` 用于取回已经完成的结果。**下载失败从来不构成重新提交的理由**，先取回。
+
+## 几个必须知道的坑
+
+**HitPaw 后端硬顶 1080。** 竖屏 1080×1920 会被压成 608×1080，导出设置改不掉。不要整帧放大回去交付，那只是骗过分辨率检查。擦除带很窄的时候用合成法：源片当底，只把擦除带放大后贴回，边缘羽化过渡，带外像素 100% 来自源片。
+
+**联系表不能用来量位置。** 缩到缩略图尺寸后，低对比度的那条字幕是看不见的，而位置离群的那条恰恰就是它。必须整幅高度扫描，细节见 [references/subtitle-scan.md](references/subtitle-scan.md)。
+
+**擦除框的四个角点是移动整个框，不是缩放。** 即使精准抓在角上也一样。缩放只能用四条边的中点手柄，每拖一次都要回读确认，判断依据是宽高有没有保持不变。
+
+**结果 URL 有两个日志标记。** 正常是 `removeWatermark result url:`，App 自己下载失败时写的是 `FileReady url:`。脚本两个都匹配，取最后一条。
+
+## 控制方式
+
+全程走后台 app 通道，事件直接投递给 HitPaw 的窗口，不移动你的物理光标，也不把窗口提到前台。
+
+唯一的例外是 macOS 的文件打开对话框：它属于独立系统进程 `com.apple.appkit.xpc.openAndSavePanelService`，后台通道进不去，也无法单独授权。这一步用键盘完成，四个按键、约一秒，期间键盘焦点归对话框。skill 要求在按之前先告知，而不是按完再说。详见 [references/hitpaw-gui.md](references/hitpaw-gui.md)。
+
+## 安全与隐私
+
+- 源文件只读，所有中间产物写到调用方指定的工作目录。
+- 仓库里不保存 API key、签名 URL、任务 UUID、额度余额、用户名、源视频、截图或日志。
+- 临时 URL 只存在于进程输出里，不写进清单、报告或 Git。
+- 云端提交视为消耗付费额度：提交前确认文件与区域，只提交一次，绝不购买额度。
+- 生成式修补可能损坏食材、手、器具、包装或界面文字。整帧擦除前必须明确警告，并单独保留未加工的原始结果以便对比。
+
+## 局限
+
+- 只支持 macOS 上的 HitPaw Edimakor，不是通用去字幕方案。
+- 长边超过 1080 的视频会被工具降采样，这是工具的硬限制，skill 只能规避影响、不能消除。
+- 字幕压在复杂纹理上时，生成式修补的结果需要人眼确认，脚本跑通不等于画面可用。
+- 文件导入那一两秒会占用键盘焦点，无法消除。
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。
+
+## English summary
+
+A skill for Claude Code and Codex that drives HitPaw Edimakor on macOS to remove burned-in
+subtitles and verify the result. It locates captions with a full-height per-row edge scan rather
+than by eye, drives the app in background mode so the user keeps their mouse, recovers finished
+jobs from the local log even when the app's own download failed, and proves coverage by re-running
+the same scan on the output. HitPaw is a paid dependency; this skill never purchases credits.

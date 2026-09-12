@@ -1,0 +1,4 @@
+interface:
+  display_name: "HitPaw Remove Hardsubs"
+  short_description: "Inspect, remove, retrieve, and verify hardcoded video subtitles"
+  default_prompt: "Use $hitpaw-remove-hardsubs to remove every burned-in subtitle from this video and verify the finished file."
