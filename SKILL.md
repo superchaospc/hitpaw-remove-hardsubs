@@ -5,7 +5,7 @@ description: Remove burned-in or hardcoded subtitles from MP4/MOV cooking and sh
 
 # HitPaw Remove Hardsubs
 
-Remove hard subtitles with an inspect → choose scope → process → retrieve → verify workflow. Keep source files unchanged and place finished files in `~/Movies/去字幕成品/` unless the user specifies otherwise.
+Remove hard subtitles with an inspect → choose scope → process → retrieve → verify workflow. Keep source files unchanged and place finished files in `~/Movies/去字幕成品/` unless the user specifies otherwise. Every finished file is vertical 1080×1920.
 
 ## Workflow
 
@@ -27,8 +27,9 @@ Remove hard subtitles with an inspect → choose scope → process → retrieve 
 7. Choose **Remove subtitles**, set the selected region, submit once, and accept the 1080P compatibility conversion when required. Do not resubmit a slow task because that can consume credits again.
 8. Poll the newest HitPaw log for a new result URL with `scripts/fetch-result.sh --wait OUTPUT`. The script switches the known US OSS host to its acceleration endpoint automatically.
 9. Inspect the downloaded result at one frame per second across its entire duration. If a final nutrition card or other text panel remains, trim at the first frame where it appears rather than trying to reconstruct the covered image.
-10. Restore vertical output to 1080×1920 when HitPaw returns 608×1080. Use Lanczos scaling and mild sharpening; preserve audio.
-11. Run `scripts/verify-clean.sh OUTPUT VERIFY_DIR`. View every generated sheet, then run a complete decode check before claiming completion.
+10. Restore the source resolution first. HitPaw caps the long edge at 1080, so a 720×1280 or 1080×1920 source comes back as 608×1080. For a band region, composite: keep the source as the base and paste back only the upscaled removal band with a feathered mask, after checking frame alignment — see [references/hitpaw-gui.md](references/hitpaw-gui.md). For a full-frame region, upscale the whole HitPaw result to the source size with Lanczos, and tell the user those pixels are reconstructed. Preserve the source audio.
+11. Conform every finished file to vertical **1080×1920**, whatever the source size: `scripts/conform-vertical.sh RESTORED FINAL`. It fit-scales the picture, centres it on black when the aspect is not 9:16, never crops or stretches, copies audio, keeps every frame, and stream-copies media that is already 1080×1920. Deliver only `FINAL`. Do not skip step 10 and conform the 608×1080 result directly: that throws away source detail the composite keeps.
+12. Run `scripts/verify-clean.sh FINAL VERIFY_DIR`. It fails unless the file is exactly 1080×1920 with square pixels. View every generated sheet, run the subtitle scan on `FINAL`, and confirm the complete decode before claiming completion.
 
 ## Safety and privacy
 

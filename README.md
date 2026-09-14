@@ -11,6 +11,7 @@
 - 以**后台模式**驱动 HitPaw，你的鼠标和当前窗口不受影响。只有系统文件对话框那一两秒需要键盘。
 - 任务完成后从 HitPaw 的本地日志里取回结果，包括 App 自己下载失败、卡片显示 "Failed to download" 的情况。
 - 对成品跑同一套检测，用"每一帧都没有检出"来证明覆盖完整，而不是抽查几张缩略图。
+- **成品统一是竖屏 1080×1920**，不管原片是 720×1280、1080×1920 还是横屏。先恢复到原片分辨率保住细节，再等比转成 1080×1920（比例不是 9:16 时补黑边，不裁切不拉伸），验收脚本不是这个尺寸就判失败。
 
 ## 前置条件
 
@@ -46,14 +47,22 @@ ln -s ~/.claude/skills/hitpaw-remove-hardsubs ~/.codex/skills/hitpaw-remove-hard
 ```bash
 scripts/inspect-video.sh INPUT_VIDEO WORK_DIR   # 探测元数据 + 生成联系表
 scripts/fetch-result.sh [--wait] OUTPUT_MP4     # 从本地日志取回已完成的结果
-scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收
+scripts/conform-vertical.sh RESTORED FINAL      # 转成 1080×1920 成品
+scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收（必须是 1080×1920）
 ```
+
+`conform-vertical.sh` 只做交付格式转换：等比缩放到能放进 1080×1920 的最大尺寸，居中补黑边，音频直接复制，逐帧保留且会核对帧数，不覆盖已存在的文件。已经是 1080×1920 的文件直接流复制，不重新压缩；其他尺寸以 x264 CRF 16 重新编码。
 
 `fetch-result.sh --wait` 用于任务还在跑的时候等待，不带 `--wait` 用于取回已经完成的结果。**下载失败从来不构成重新提交的理由**，先取回。
 
 ## 几个必须知道的坑
 
-**HitPaw 后端硬顶 1080。** 竖屏 1080×1920 会被压成 608×1080，导出设置改不掉。不要整帧放大回去交付，那只是骗过分辨率检查。擦除带很窄的时候用合成法：源片当底，只把擦除带放大后贴回，边缘羽化过渡，带外像素 100% 来自源片。
+**HitPaw 后端硬顶 1080。** 竖屏 720×1280、1080×1920 都会被压成 608×1080，导出设置改不掉。所以顺序固定为两步：
+
+1. **先回到原片分辨率。** 擦除带较窄时用合成法：源片当底，只把擦除带放大后贴回，边缘羽化过渡，带外像素 100% 来自源片；贴之前先验帧对齐。整帧擦除时只能整帧放大，要明说画面是重建的。
+2. **再转成 1080×1920 交付。** 用 `conform-vertical.sh`。
+
+不要跳过第 1 步直接把 608×1080 放大成 1080×1920：成品尺寸一样，但原片里本来保得住的细节全丢了。
 
 **联系表不能用来量位置。** 缩到缩略图尺寸后，低对比度的那条字幕是看不见的，而位置离群的那条恰恰就是它。必须整幅高度扫描，细节见 [references/subtitle-scan.md](references/subtitle-scan.md)。
 
@@ -79,6 +88,7 @@ scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收
 
 - 只支持 macOS 上的 HitPaw Edimakor，不是通用去字幕方案。
 - 长边超过 1080 的视频会被工具降采样，这是工具的硬限制，skill 只能规避影响、不能消除。
+- 成品尺寸固定为 1080×1920。横屏或非 9:16 素材会带黑边，不会自动裁切铺满；原片低于 1080×1920 时，转换只是放大，不增加细节。
 - 字幕压在复杂纹理上时，生成式修补的结果需要人眼确认，脚本跑通不等于画面可用。
 - 文件导入那一两秒会占用键盘焦点，无法消除。
 
@@ -92,4 +102,8 @@ A skill for Claude Code and Codex that drives HitPaw Edimakor on macOS to remove
 subtitles and verify the result. It locates captions with a full-height per-row edge scan rather
 than by eye, drives the app in background mode so the user keeps their mouse, recovers finished
 jobs from the local log even when the app's own download failed, and proves coverage by re-running
-the same scan on the output. HitPaw is a paid dependency; this skill never purchases credits.
+the same scan on the output. Every finished file is vertical 1080x1920: the result is first restored to
+the source resolution (a feathered band composite, or a disclosed full-frame upscale), then fit-scaled
+onto 1080x1920 with black padding when the aspect is not 9:16, never cropped or stretched, with
+audio copied and every frame kept; the verify script fails on any other size. HitPaw is a paid
+dependency; this skill never purchases credits.
