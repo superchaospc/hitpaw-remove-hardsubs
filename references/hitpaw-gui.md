@@ -75,7 +75,14 @@ For multiple input videos, inspect and set the scope per video unless their layo
 
 ## Compatibility conversion
 
-HitPaw may convert a 1080×1920 vertical video to about 608×1080 because it limits the long edge to 1080. This is expected. After removal, upscale to 1080×1920 with Lanczos and mild sharpening. Do not claim the pixels are original resolution; this is a reconstructed delivery resolution.
+HitPaw limits the long edge to 1080, so a vertical 720×1280 or 1080×1920 source is processed and returned at about 608×1080. The "adjust to 1080P" prompt is not optional: the backend downscales whether you confirm or cancel.
+
+Get back to the source resolution before anything else:
+
+- **Band region — composite.** Keep the source as the base and replace only the removal band. Upscale the HitPaw result to the source size, then overlay it through a feathered greyscale band mask; outside the band every pixel is the source's. Check alignment first: HitPaw can drop a frame, so compare PSNR of the result against the source scaled to 608×1080 at offset 0 and offset 1, and use the offset that scores clearly higher. A `-loop 1` mask input needs `-t`, and the command needs `-frames:v <source frame count>`, or the overlay never ends and keeps writing.
+- **Full-frame region — upscale.** Scale the whole result to the source size with Lanczos. Say plainly that the delivery pixels are reconstructed, not original resolution.
+
+Then conform to the delivery format with `scripts/conform-vertical.sh RESTORED FINAL`. Every finished file is 1080×1920: fit-scaled, black padding when the aspect is not 9:16, never cropped or stretched, audio copied, every frame kept. A 1080×1920 composite is stream-copied, so it is not re-encoded again.
 
 ## Result retrieval
 
@@ -103,4 +110,4 @@ This host is an observed implementation detail and may change. If the accelerate
 - Inspect scene transitions and the first and last second more densely when needed.
 - Confirm no title, instruction subtitle, watermark-like subtitle, or final information card remains.
 - Confirm important visual content has not been erased unacceptably.
-- Confirm H.264/AAC playback compatibility, expected dimensions and duration, and a full error-free decode.
+- Confirm H.264/AAC playback compatibility, exactly 1080×1920 with square pixels, the expected duration, and a full error-free decode. `scripts/verify-clean.sh` fails on any other size.
