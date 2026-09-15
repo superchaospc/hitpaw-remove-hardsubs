@@ -38,15 +38,45 @@ has a background channel, the keyboard does not. Keep the exposure as short as p
    contents with `pbpaste` first and restoring them afterwards. This step sends no keystrokes.
 2. `app_click` the Import button in background mode.
 3. Tell the user to hold off typing for a couple of seconds.
-4. Take full-screen control and send **keyboard actions only**, as one batch: `cmd+shift+g`,
-   `cmd+v`, `Return`, `Return`. Four keypresses, about a second. Never `type` the path character
-   by character — that stretches the same conflict across roughly eight seconds. Never issue
-   clicks, `mouse_move`, or drags while full control is held: those move the user's pointer,
-   keyboard actions do not.
+4. Take full-screen control, bring Edimakor to the front (`open_application`; if another app such
+   as a browser is frontmost the key actions are refused), and send **keyboard actions only**:
+   `cmd+shift+g`, wait ~1 s, `cmd+v`, then **zoom on the Go-to field and read the path before any
+   `Return`**. The Go-to field is pre-filled with the last directory used, and the paste does not
+   always land: on 2026-09-15 the field kept the previous job's `working.mp4`, and the blind
+   `Return`, `Return` imported that other video. If the field does not show your path, `cmd+a` and
+   `type` the absolute path instead; the extra seconds are cheaper than importing the wrong file.
+   Only after the zoom confirms the path, send `Return`, `Return`. Never issue clicks,
+   `mouse_move`, or drags while full control is held: those move the user's pointer, keyboard
+   actions do not.
 5. Call `release_full_control` immediately, before touching anything else, and finish the job in
-   background mode.
+   background mode. Confirm the imported thumbnail and duration are the intended file. A wrongly
+   imported item cannot be removed from the media strip (no exposed delete control, `delete` key
+   does nothing); quit Edimakor from its menu and relaunch to get an empty Watermark Remover.
 
 Never reach the panel with AppleScript, System Events, or shell-driven keystrokes.
+
+## Blocking windows and the submit confirmation
+
+- **Home-screen AI Tools tiles crash on background clicks** (Qt segfault in
+  `QQuickItem::height()`); click the Watermark Remover tile with a foreground click.
+- **Promotional pop-ups** (e.g. a pinned "Fall Special Sale" window shown after launch) are modal:
+  every click on the main window is swallowed and the log records nothing. `Escape` does not close
+  them. Click only the pop-up's own close `×` in its top-right corner — never a Buy button.
+- **The 1080P compatibility dialog** is reported as belonging to another process, so a background
+  `app_click` on Confirm can be refused, and a click that looked ineffective can still land late.
+  Before clicking Confirm a second time, read the newest log for `WRVRTaskstarted` /
+  `addPreDeduction` / `SYVideoRemoveMgrNew taskId`. If any appears after your Remove click, the
+  job is already submitted: do not click again.
+
+## Partial resubmission to save credits
+
+Credits scale with duration (about one per second). When only a short stretch still has a caption
+— for example a cue missed by an earlier pass — submit a frame-accurate clip of just that stretch
+with some margin (`trim=start_frame=A:end_frame=B`, high-quality x264, no audio), then composite the
+result back onto the existing cleaned media by frame number, using `overlay` with
+`enable='between(n,A,B)'` and the clip timestamps shifted by `A/fps`. Check alignment with the same
+offset-PSNR test; the result may again be a couple of frames short, so make sure it still spans the
+caption's frames.
 
 ## Scope selection
 
@@ -103,6 +133,12 @@ with:
 `edimakorpc-us-prod.oss-accelerate.aliyuncs.com`
 
 This host is an observed implementation detail and may change. If the accelerated request fails, try the original URL once and inspect current logs instead of resubmitting the AI task.
+
+A short job can finish before you start waiting for it. A watcher that only looks for a result
+*newer* than when it started will then wait forever. Check the log first: if `removeWatermark result
+path:` already names a file under `~/Movies/HitPaw Software/HitPaw Edimakor/AI Generator/WatermrkRemover/`
+and `WRVRResultdownloadsucceeded` follows, Edimakor has already downloaded it — copy that local file
+instead of waiting or re-downloading.
 
 ## Acceptance criteria
 
