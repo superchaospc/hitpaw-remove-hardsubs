@@ -99,7 +99,22 @@ Use a normal mouse-down/drag/mouse-up gesture rather than assuming fixed coordin
 
 ## Multiple subtitle positions
 
-One HitPaw task can remove subtitles from several positions in the same video when the selected region covers all of them. Full-frame selection is appropriate for moving or scattered subtitles, but it can also remove legitimate scene text. Always compare full-duration contact sheets before and after.
+A HitPaw task takes exactly **one** box, in both Remove watermark and Remove text modes. Dragging
+on empty canvas or right-clicking adds no second box. So one task covers several positions only
+when a single rectangle spans all of them.
+
+When two positions are far apart, don't widen one box over the space between them (a tall box
+repaints everything in between). Handle each position with its own job. Example: a caption band on
+every frame plus a title on the first 3 frames. Submit the full video with the band selected. Then
+submit a short clip of just the title frames with the title selected. Composite each result only
+inside its own mask and frame range (`enable='lte(n,2)'` for the title). The clip must be **at
+least 2 seconds** long, or Edimakor rejects it ("only videos of 2 seconds or longer"). A 2.5 s clip
+cost 3 credits.
+
+Before drawing, maximize the window by double-clicking its title bar. In the default small window
+one screen point covers about eight source pixels.
+
+Full-frame selection is appropriate for moving or scattered subtitles, but it can also remove legitimate scene text. Always compare full-duration contact sheets before and after.
 
 For multiple input videos, inspect and set the scope per video unless their layout is demonstrably identical. Do not assume that a batch shares one correct rectangle.
 
