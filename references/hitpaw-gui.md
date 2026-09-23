@@ -34,18 +34,17 @@ after. There is a single system-wide keyboard focus: while the panel is up it ow
 anything the user types lands in the panel's path field alongside your own keystrokes. The mouse
 has a background channel, the keyboard does not. Keep the exposure as short as possible:
 
-1. Put the absolute path on the clipboard from the shell with `pbcopy`, saving the previous
-   contents with `pbpaste` first and restoring them afterwards. This step sends no keystrokes.
+1. Have the working file's path ready (copy the source to an ASCII name in the work directory).
+   No clipboard is needed: the path gets typed, because pasting it proved unreliable.
 2. `app_click` the Import button in background mode.
 3. Tell the user to hold off typing for a couple of seconds.
 4. Take full-screen control, bring Edimakor to the front (`open_application`; if another app such
    as a browser is frontmost the key actions are refused), and send **keyboard actions only**:
-   `cmd+shift+g`, wait ~1 s, `cmd+v`, then **zoom on the Go-to field and read the path before any
-   `Return`**. The Go-to field is pre-filled with the last directory used, and the paste does not
-   always land: on 2026-09-15 the field kept the previous job's `working.mp4`, and the blind
-   `Return`, `Return` imported that other video. If the field does not show your path, `cmd+a` and
-   `type` the absolute path instead; the extra seconds are cheaper than importing the wrong file.
-   Only after the zoom confirms the path, send `Return`, `Return`. Never issue clicks,
+   `cmd+shift+g`, wait ~1 s, `cmd+a`, then **`type` the path** (a `~/...` path works, Unicode
+   folder names included), then **zoom on the Go-to field and read the path before any
+   `Return`**. Do not rely on `cmd+v`: the paste failed to land on both 2026-09-15 and
+   2026-09-23. The Go-to field is pre-filled with the last path used; on 2026-09-15 a blind
+   `Return`, `Return` after a failed paste imported the previous job's `working.mp4`. Only after the zoom confirms the path, send `Return`, `Return`. Never issue clicks,
    `mouse_move`, or drags while full control is held: those move the user's pointer, keyboard
    actions do not.
 5. Call `release_full_control` immediately, before touching anything else, and finish the job in
@@ -63,7 +62,10 @@ Never reach the panel with AppleScript, System Events, or shell-driven keystroke
   every click on the main window is swallowed and the log records nothing. `Escape` does not close
   them. Click only the pop-up's own close `×` in its top-right corner — never a Buy button.
 - **The 1080P compatibility dialog** is reported as belonging to another process, so a background
-  `app_click` on Confirm can be refused, and a click that looked ineffective can still land late.
+  `app_click` on Confirm is refused ("belongs to a different process"), and a click that looked
+  ineffective can still land late. The reliable path is one foreground click on Confirm under
+  full-screen control, then `release_full_control` straight away. A "Compatibility Processing"
+  dialog follows; leave it alone, the upload continues on its own.
   Before clicking Confirm a second time, read the newest log for `WRVRTaskstarted` /
   `addPreDeduction` / `SYVideoRemoveMgrNew taskId`. If any appears after your Remove click, the
   job is already submitted: do not click again.
@@ -122,7 +124,8 @@ For multiple input videos, inspect and set the scope per video unless their layo
 
 HitPaw limits the long edge to 1080, so a vertical 720×1280 or 1080×1920 source is processed and returned at about 608×1080. The "adjust to 1080P" prompt is not optional: the backend downscales whether you confirm or cancel.
 
-Get back to the source resolution before anything else:
+Get back to the source resolution before anything else. For any band or box region, use
+`scripts/composite-mask.py`, which does all of the below and adds the difference mask:
 
 - **Band region — composite.** Keep the source as the base and replace only the removal band. Upscale the HitPaw result to the source size, then overlay it through a feathered greyscale band mask; outside the band every pixel is the source's. Check alignment first: HitPaw can drop a frame, so compare PSNR of the result against the source scaled to 608×1080 at offset 0 and offset 1, and use the offset that scores clearly higher. A `-loop 1` mask input needs `-t`, and the command needs `-frames:v <source frame count>`, or the overlay never ends and keeps writing.
 - **Full-frame region — upscale.** Scale the whole result to the source size with Lanczos. Say plainly that the delivery pixels are reconstructed, not original resolution.

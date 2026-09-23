@@ -17,7 +17,7 @@
 
 - macOS，已安装并登录 **HitPaw Edimakor**。这是付费工具，每个任务消耗 AI 额度，本 skill 不会替你购买。
 - `ffmpeg` / `ffprobe`。
-- Python 3 与 `numpy`（只用于字幕行扫描）。
+- Python 3 与 `numpy`（字幕行扫描和合成脚本要用）。macOS 自带或 Homebrew 的最新版 Python 常常没装 numpy，也装不上（例如 3.14），那就用一个装了 numpy 的 venv 里的 python 来跑脚本。
 - Claude Code 或 Codex，且具备桌面控制能力。没有的话 skill 会准备好素材和清单后停下，不会谎称已提交。
 
 ## 安装
@@ -47,11 +47,14 @@ ln -s ~/.claude/skills/hitpaw-remove-hardsubs ~/.codex/skills/hitpaw-remove-hard
 ```bash
 scripts/inspect-video.sh INPUT_VIDEO WORK_DIR   # 探测元数据 + 生成联系表
 scripts/fetch-result.sh [--wait] OUTPUT_MP4     # 从本地日志取回已完成的结果
+scripts/composite-mask.py SOURCE HITPAW RESTORED --band Y0 Y1  # 只在字幕行贴回，其余保持原片画质
 scripts/conform-vertical.sh RESTORED FINAL      # 转成 1080×1920 成品
 scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收（必须是 1080×1920）
 ```
 
 `conform-vertical.sh` 只做交付格式转换：等比缩放到能放进 1080×1920 的最大尺寸，居中补黑边，音频直接复制，逐帧保留且会核对帧数，不覆盖已存在的文件。已经是 1080×1920 的文件直接流复制，不重新压缩；其他尺寸以 x264 CRF 16 重新编码。
+
+`composite-mask.py` 会自己测帧对齐（偏移 -2..2 取差异最小），逐帧生成行掩码，只在这些行贴 HitPaw 的像素，其余全部来自原片；帧率、帧数、音轨都保留原片的。掩码由两部分取并集：原片的边缘扫描，加上「原片 vs HitPaw 结果」的逐帧差分。被 HitPaw 重绘过的行就是有字的行，所以差分能补上边缘扫描漏掉的无描边白字。
 
 `fetch-result.sh --wait` 用于任务还在跑的时候等待，不带 `--wait` 用于取回已经完成的结果。**下载失败从来不构成重新提交的理由**，先取回。
 
@@ -63,6 +66,21 @@ scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收（必须是 1080�
 2. **再转成 1080×1920 交付。** 用 `conform-vertical.sh`。
 
 不要跳过第 1 步直接把 608×1080 放大成 1080×1920：成品尺寸一样，但原片里本来保得住的细节全丢了。
+
+**边缘扫描看不见无描边的白字。** 检测靠的是字幕黑色描边产生的锐利边缘。纯白、没描边的小字压在浅色盘子或不锈钢锅上，几乎没有边缘，严格扫描直接报空。2026-09-23 那条早午餐视频里有三条这样的字（芝麻盐、撒芝士、煎几个饺子）严格扫描都没扫到，第一版成品里「芝麻盐」还留着。对策：
+- 定框前再跑一遍 30fps、行阈值 15 的宽松扫描。它会把水珠、虾须、瓶口也报出来，只用来指出要人眼看的帧。
+- 合成时用 `composite-mask.py`，由它的差分掩码兜底。不要只拿边缘扫描做掩码。
+- 验收时两遍扫描都跑，宽松扫描报出来的每一段都要截原片和成品的对比图人眼确认。
+
+**字幕小而分散时：一个高框 + Remove text，一次任务搞定。** 面板上的模式是 Remove watermark / **Remove text** / Remove mosaic / Quick blur，没有「Remove subtitles」。Remove text 只重绘它识别出的文字，包装袋、瓶身上的字会保留。所以框可以拉得又高又宽（例如 y≈460–1720 全宽），反正合成时只贴字幕行，框大不损画质。
+
+**合成时别用 `-shortest`。** 原片音轨常比视频短几毫秒，`-shortest` 会悄悄砍掉最后几帧。`composite-mask.py` 用的是 `-frames:v` 原片帧数。
+
+**`conform-vertical.sh` 不覆盖已存在的成品。** 重跑前先删旧的 FINAL，否则后面验收的是旧文件。
+
+**导入对话框的 Go-to 栏别用粘贴。** `cmd+v` 在 09-15 和 09-23 两次都没生效，栏里还是上一个任务的路径，这时直接回车会导入别的视频。改成 `cmd+a` 后直接 type 路径，确认读到的路径对了再回车。
+
+**1080P 确认框后台点不动。** 它被报成另一个进程的窗口，后台点击会被拒绝，需要一次前台点击 Confirm，点完立即交还控制。点第二次之前先查日志，确认任务还没提交，避免重复扣费。
 
 **联系表不能用来量位置。** 缩到缩略图尺寸后，低对比度的那条字幕是看不见的，而位置离群的那条恰恰就是它。必须整幅高度扫描，细节见 [references/subtitle-scan.md](references/subtitle-scan.md)。
 
@@ -104,7 +122,9 @@ A skill for Claude Code and Codex that drives HitPaw Edimakor on macOS to remove
 subtitles and verify the result. It locates captions with a full-height per-row edge scan rather
 than by eye, drives the app in background mode so the user keeps their mouse, recovers finished
 jobs from the local log even when the app's own download failed, and proves coverage by re-running
-the same scan on the output. Every finished file is vertical 1080x1920: the result is first restored to
+the same scan on the output. Captions are pasted back through a per-frame row mask that unions the
+edge scan with a source-vs-result difference, because the edge scan alone misses unstroked white
+captions. Every finished file is vertical 1080x1920: the result is first restored to
 the source resolution (a feathered band composite, or a disclosed full-frame upscale), then fit-scaled
 onto 1080x1920 with black padding when the aspect is not 9:16, never cropped or stretched, with
 audio copied and every frame kept; the verify script fails on any other size. HitPaw is a paid
