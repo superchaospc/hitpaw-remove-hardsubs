@@ -43,6 +43,19 @@ Thresholds: a neighbour difference above 70 counts as an edge, 25 such edges mak
 rows more than 12 apart are separate bands, and a band under 12 rows tall is noise. These hold for
 1080-wide vertical video with typical outlined captions. Widen them only with a reason, and say so.
 
+## What it misses
+
+The detector counts sharp edges, so it depends on the caption's dark outline. A plain white
+caption with no stroke, sitting on a light plate or a steel pan, produces too few edges per row
+and is reported as empty. Three such cues (芝麻盐, 撒芝士, 煎几个饺子) passed the strict scan
+on a 2026-09-23 job. So:
+
+- Before choosing the box, also run it at `FPS = 30` with the row threshold at 15. That pass is
+  noisy (droplets, whiskers, bottle rims), so read it as "go look at these frames", not as bands.
+- After HitPaw returns, the reliable locator is the difference between the source (scaled to the
+  result size) and the result: rows with ≥10 pixels changed by >45 are rows HitPaw repainted.
+  `scripts/composite-mask.py` unions that with this scan to build its mask.
+
 ## Turning the scan into a region
 
 Take the union of every band the scan reported across the whole clip, then pad 20–30px on each
@@ -51,6 +64,8 @@ Missing one cue is not free, because the fix is a second paid job on the same cl
 
 ## Verifying afterwards
 
-Run the identical scan on the finished file. An empty result across every frame is the check that
-the removal actually covered every cue; inspecting a handful of thumbnails is not. Report the
+Run the identical scan on the finished file, plus the 30 fps threshold-15 pass. An empty strict
+result across every frame is necessary but not sufficient: the strict scan is blind to unstroked
+captions, so view a source-vs-final crop of every stretch the loose pass flags. Inspecting a
+handful of thumbnails is not a check. Report the
 frame range and row band of anything that survives.
