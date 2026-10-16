@@ -125,12 +125,35 @@ For multiple input videos, inspect and set the scope per video unless their layo
 HitPaw limits the long edge to 1080, so a vertical 720×1280 or 1080×1920 source is processed and returned at about 608×1080. The "adjust to 1080P" prompt is not optional: the backend downscales whether you confirm or cancel.
 
 Get back to the source resolution before anything else. For any band or box region, use
-`scripts/composite-mask.py`, which does all of the below and adds the difference mask:
+`scripts/build-captions.py` to draft the caption list and `scripts/composite-captions.py` to
+paste the result back. SKILL.md step 10 has the commands. Together they do all of the below:
 
-- **Band region — composite.** Keep the source as the base and replace only the removal band. Upscale the HitPaw result to the source size, then overlay it through a feathered greyscale band mask; outside the band every pixel is the source's. Check alignment first: HitPaw can drop a frame, so compare PSNR of the result against the source scaled to 608×1080 at offset 0 and offset 1, and use the offset that scores clearly higher. A `-loop 1` mask input needs `-t`, and the command needs `-frames:v <source frame count>`, or the overlay never ends and keeps writing.
+- **Band or box region — composite per caption.** Keep the source as the base. Upscale the HitPaw result to the source size, and paste it only inside one feathered rectangle per confirmed caption, during that caption's frames; every other pixel is the source's. Check alignment first. HitPaw can drop or add a frame, so compare PSNR of the result against the source scaled to 608×1080 at offsets −2..2, in floating point, and use the offset that scores clearly higher. An int16 square overflows on caption pixels, turns offset 0 into NaN and picks a wrong offset. Blend the Y, U and V planes directly, and colour-tag the raw input, not just the output. Otherwise ffmpeg range-converts every pixel, and the frame outside the patches drops to 43 dB with Y shifted about −1.7. Accept the composite only when `scripts/check-outside-psnr.py` shows it matching a plain re-encode outside the patches.
 - **Full-frame region — upscale.** Scale the whole result to the source size with Lanczos. Say plainly that the delivery pixels are reconstructed, not original resolution.
 
 Then conform to the delivery format with `scripts/conform-vertical.sh RESTORED FINAL`. Every finished file is 1080×1920: fit-scaled, black padding when the aspect is not 9:16, never cropped or stretched, audio copied, every frame kept. A 1080×1920 composite is stream-copied, so it is not re-encoded again.
+
+## Edimakor 5.3 changes (seen on 2026-10-16, version 5.3.0.5)
+
+- **Auto-update on first tool open.** Opening Watermark Remover after launch showed "Downloading…" and
+  then "Installing…" dialogs. That was the app updating itself from 5.2.1 to 5.3.0.5, and an open file panel closed
+  while it ran. Check with `pgrep -fl "/Applications/.TempUpdate/HitPaw Edimakor"`, wait for the
+  updater to exit and the app to relaunch, then start over from the home screen.
+- **Window off screen after relaunch.** The relaunched window sat mostly past the right edge of the
+  display. The zoom button does nothing, and a foreground drag is refused because it ends over the desktop.
+  Move it with `osascript -e 'tell application "System Events" to tell (first process whose bundle
+  identifier is "com.HitPaw.VideoEditor") to set position of window 1 to {800, 133}'`. This only
+  moves the window and sends no input, so the AppleScript ban on the open panel does not apply.
+- **Text Remover is its own tool.** The Watermark Remover tile now opens a full-window page whose
+  sidebar lists Watermark Remover, **Text Remover**, Mosaic Remover, Object Remover and Quick Blur.
+  The old "Remove text" radio is gone. Use **Text Remover**; a sidebar click is safe. It still takes one box, and the Remove button
+  shows the price (`Remove 🪙 9` for an 8.6 s clip).
+- **1080P Confirm** belongs to the helper process "Hitpaw Video Editor Gunner", which cannot be
+  granted (`request_access` reports it as not installed). Ask the user to click Confirm once, then
+  look for `addPreDeduction` and `RemoveSdkService: task created` in the log.
+- **Result marker.** The log line is now `RemoveSdkService: file ready, url = "…"`. The app saves
+  the file itself as `uwm_<taskId>_<timestamp>.mp4` under `AI Generator/WatermrkRemover/`.
+  `scripts/fetch-result.sh` matches both the old and new markers. An 8.6 s clip came back in about 45 s.
 
 ## Result retrieval
 
