@@ -133,6 +133,28 @@ paste the result back. SKILL.md step 10 has the commands. Together they do all o
 
 Then conform to the delivery format with `scripts/conform-vertical.sh RESTORED FINAL`. Every finished file is 1080×1920: fit-scaled, black padding when the aspect is not 9:16, never cropped or stretched, audio copied, every frame kept. A 1080×1920 composite is stream-copied, so it is not re-encoded again.
 
+## Edimakor 5.3 changes (seen on 2026-10-16, version 5.3.0.5)
+
+- **Auto-update on first tool open.** Opening Watermark Remover after launch showed "Downloading…" and
+  then "Installing…" dialogs. That was the app updating itself from 5.2.1 to 5.3.0.5, and an open file panel closed
+  while it ran. Check with `pgrep -fl "/Applications/.TempUpdate/HitPaw Edimakor"`, wait for the
+  updater to exit and the app to relaunch, then start over from the home screen.
+- **Window off screen after relaunch.** The relaunched window sat mostly past the right edge of the
+  display. The zoom button does nothing, and a foreground drag is refused because it ends over the desktop.
+  Move it with `osascript -e 'tell application "System Events" to tell (first process whose bundle
+  identifier is "com.HitPaw.VideoEditor") to set position of window 1 to {800, 133}'`. This only
+  moves the window and sends no input, so the AppleScript ban on the open panel does not apply.
+- **Text Remover is its own tool.** The Watermark Remover tile now opens a full-window page whose
+  sidebar lists Watermark Remover, **Text Remover**, Mosaic Remover, Object Remover and Quick Blur.
+  The old "Remove text" radio is gone. Use **Text Remover**; a sidebar click is safe. It still takes one box, and the Remove button
+  shows the price (`Remove 🪙 9` for an 8.6 s clip).
+- **1080P Confirm** belongs to the helper process "Hitpaw Video Editor Gunner", which cannot be
+  granted (`request_access` reports it as not installed). Ask the user to click Confirm once, then
+  look for `addPreDeduction` and `RemoveSdkService: task created` in the log.
+- **Result marker.** The log line is now `RemoveSdkService: file ready, url = "…"`. The app saves
+  the file itself as `uwm_<taskId>_<timestamp>.mp4` under `AI Generator/WatermrkRemover/`.
+  `scripts/fetch-result.sh` matches both the old and new markers. An 8.6 s clip came back in about 45 s.
+
 ## Result retrieval
 
 HitPaw logs normally live beneath:

@@ -22,7 +22,8 @@ latest_url() {
   [[ -n $latest ]] || return 1
   # Edimakor writes the finished URL under either marker. A job that the app itself failed to
   # download logs only "FileReady url:", so matching the other marker alone loses the result.
-  sed -n -E 's/.*(removeWatermark result url|FileReady url): "([^"]*)".*/\2/p' "$latest" | tail -1
+  # 5.3 (Text Remover) logs it as `RemoveSdkService: file ready, url = "..."` instead.
+  sed -n -E 's/.*(removeWatermark result url|FileReady url): "([^"]*)".*/\2/p; s/.*file ready, url = "([^"]*)".*/\1/p' "$latest" | tail -1
 }
 
 existing=$(latest_url || true)

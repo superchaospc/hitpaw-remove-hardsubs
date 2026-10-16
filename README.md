@@ -78,7 +78,7 @@ scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收（必须是 1080�
 - 合成后看 `composite-captions.py` 的「清单外被重绘」报告，标着 `caption-like` 的段多半是漏掉的字。补进 `CAPTIONS` 再合成。
 - 验收时两遍扫描都跑，宽松扫描报出来的每一段都要截原片和成品的对比图人眼确认。
 
-**字幕小而分散时：一个高框 + Remove text，一次任务搞定。** 面板上的模式是 Remove watermark / **Remove text** / Remove mosaic / Quick blur，没有「Remove subtitles」。Remove text 只重绘它识别出的文字，包装袋、瓶身上的字会保留。所以框可以拉得又高又宽（例如 y≈460–1720 全宽），反正合成时只在每条字幕的矩形里贴回，框大不损画质。
+**字幕小而分散时：一个高框 + Remove text，一次任务搞定。** 面板上的模式是 Remove watermark / **Remove text** / Remove mosaic / Quick blur，没有「Remove subtitles」。Edimakor 5.3 起没有这个选项了，改为在去除页侧栏里点独立工具 **Text Remover**，用法相同。Remove text 只重绘它识别出的文字，包装袋、瓶身上的字会保留。所以框可以拉得又高又宽（例如 y≈460–1720 全宽），反正合成时只在每条字幕的矩形里贴回，框大不损画质。
 
 **合成时别用 `-shortest`。** 原片音轨常比视频短几毫秒，`-shortest` 会悄悄砍掉最后几帧。`composite-captions.py` 用的是 `-frames:v` 原片帧数。
 
