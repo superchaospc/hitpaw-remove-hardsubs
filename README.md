@@ -47,14 +47,20 @@ ln -s ~/.claude/skills/hitpaw-remove-hardsubs ~/.codex/skills/hitpaw-remove-hard
 ```bash
 scripts/inspect-video.sh INPUT_VIDEO WORK_DIR   # 探测元数据 + 生成联系表
 scripts/fetch-result.sh [--wait] OUTPUT_MP4     # 从本地日志取回已完成的结果
-scripts/composite-mask.py SOURCE HITPAW RESTORED --band Y0 Y1  # 只在字幕行贴回，其余保持原片画质
+scripts/build-captions.py SOURCE CAPTIONS --sheet SHEETS_DIR  # 从宽松扫描起草字幕清单 + 核对图
+scripts/composite-captions.py SOURCE HITPAW CAPTIONS RESTORED --box X0 X1 Y0 Y1  # 每条字幕一个羽化矩形贴回
+scripts/check-outside-psnr.py SOURCE RESTORED   # 验收：补丁外画质必须和"只重编码"的对照一致
 scripts/conform-vertical.sh RESTORED FINAL      # 转成 1080×1920 成品
 scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收（必须是 1080×1920）
 ```
 
 `conform-vertical.sh` 只做交付格式转换：等比缩放到能放进 1080×1920 的最大尺寸，居中补黑边，音频直接复制，逐帧保留且会核对帧数，不覆盖已存在的文件。已经是 1080×1920 的文件直接流复制，不重新压缩；其他尺寸以 x264 CRF 16 重新编码。
 
-`composite-mask.py` 会自己测帧对齐（偏移 -2..2 取差异最小），逐帧生成行掩码，只在这些行贴 HitPaw 的像素，其余全部来自原片；帧率、帧数、音轨都保留原片的。掩码由两部分取并集：原片的边缘扫描，加上「原片 vs HitPaw 结果」的逐帧差分。被 HitPaw 重绘过的行就是有字的行，所以差分能补上边缘扫描漏掉的无描边白字。
+合成分三步：
+
+1. `build-captions.py` 先在原片上逐帧跑宽松扫描（30fps、行阈值 15）。持续至少 8 帧、上下沿漂移不到 10 行的条带，算一条候选字幕。再逐帧数候选框里的边缘数，把起止帧修到边缘数跳变的位置。字幕都是硬切出入，被倒牛奶这类东西挡住时，扫描会晚开始，修正就是为这种情况。结果写成 `CAPTIONS`，每行 `起帧 止帧 y0 y1 名称`。可疑的（太高或太矮、亮灭对比弱、没有硬切）标成 `#?`。核对图里每条一行，三格依次是「起帧前一帧｜中间帧｜止帧后一帧」，字只能出现在中间那格。无描边白字和 emoji 贴纸扫不到，要手动补进清单。它只适合一条条分开出现的字幕：固定字幕带里一条接一条、或者折成两行的，它会全部标成可疑，这种清单要手写，一段一行，行范围包住所有文字行。
+2. `composite-captions.py` 自己测帧偏移（-2..2，浮点 PSNR）。每条字幕只在自己的帧段里、自己的行附近测 HitPaw 改动了哪些像素，外扩后羽化成一个矩形，只在矩形里贴 HitPaw 的像素，其余全是原片。直接在 Y/U/V 平面混合，色彩标签打在 raw 输入侧，所以没动的像素不会被整帧做 range 转换。帧率、帧数、音轨都保留原片的，矩形另存为 `RESTORED.rects.json`。它还会报「清单外被重绘」的段，标着 `caption-like` 的要先看：持续 20 帧以上（按 30fps 算）、不超过 120 行，多半是清单漏掉的字幕、贴纸或 emoji。2026-09-29 那条报了 14 段，只有一段是真的，是 2061–2087 帧的 🍔 贴纸。其余要么很短，要么散在几百行上，是水珠、芝麻、滤网网眼。
+3. `check-outside-psnr.py` 拿原片按同样的 x264 参数重编码一份对照（不贴任何东西），比较补丁外的 Y/U/V PSNR。合成版每个平面都必须和对照差在 0.5 dB 以内。2026-09-29 两者都是 Y 49.14 dB；v1.2.0 的旧合成只有 35.32 dB，Y 均值偏 −1.64。低好几 dB 就是合成管道在改不该动的像素。
 
 `fetch-result.sh --wait` 用于任务还在跑的时候等待，不带 `--wait` 用于取回已经完成的结果。**下载失败从来不构成重新提交的理由**，先取回。
 
@@ -69,12 +75,14 @@ scripts/verify-clean.sh OUTPUT_VIDEO VERIFY_DIR # 成品验收（必须是 1080�
 
 **边缘扫描看不见无描边的白字。** 检测靠的是字幕黑色描边产生的锐利边缘。纯白、没描边的小字压在浅色盘子或不锈钢锅上，几乎没有边缘，严格扫描直接报空。2026-09-23 那条早午餐视频里有三条这样的字（芝麻盐、撒芝士、煎几个饺子）严格扫描都没扫到，第一版成品里「芝麻盐」还留着。对策：
 - 定框前再跑一遍 30fps、行阈值 15 的宽松扫描。它会把水珠、虾须、瓶口也报出来，只用来指出要人眼看的帧。
-- 合成时用 `composite-mask.py`，由它的差分掩码兜底。不要只拿边缘扫描做掩码。
+- 合成后看 `composite-captions.py` 的「清单外被重绘」报告，标着 `caption-like` 的段多半是漏掉的字。补进 `CAPTIONS` 再合成。
 - 验收时两遍扫描都跑，宽松扫描报出来的每一段都要截原片和成品的对比图人眼确认。
 
-**字幕小而分散时：一个高框 + Remove text，一次任务搞定。** 面板上的模式是 Remove watermark / **Remove text** / Remove mosaic / Quick blur，没有「Remove subtitles」。Remove text 只重绘它识别出的文字，包装袋、瓶身上的字会保留。所以框可以拉得又高又宽（例如 y≈460–1720 全宽），反正合成时只贴字幕行，框大不损画质。
+**字幕小而分散时：一个高框 + Remove text，一次任务搞定。** 面板上的模式是 Remove watermark / **Remove text** / Remove mosaic / Quick blur，没有「Remove subtitles」。Remove text 只重绘它识别出的文字，包装袋、瓶身上的字会保留。所以框可以拉得又高又宽（例如 y≈460–1720 全宽），反正合成时只在每条字幕的矩形里贴回，框大不损画质。
 
-**合成时别用 `-shortest`。** 原片音轨常比视频短几毫秒，`-shortest` 会悄悄砍掉最后几帧。`composite-mask.py` 用的是 `-frames:v` 原片帧数。
+**合成时别用 `-shortest`。** 原片音轨常比视频短几毫秒，`-shortest` 会悄悄砍掉最后几帧。`composite-captions.py` 用的是 `-frames:v` 原片帧数。
+
+**别用整帧差分掩码，也别走 rgb24。** v1.2.0 的 `composite-mask.py` 有两个毛病：一是 rgb24 管道、色彩标签只打在输出侧，没动过的像素也被整帧转换，补丁外只剩 43 dB，Y 整体偏 −1.7；二是「原片 vs HitPaw」差分掩码在没字幕的帧上也大面积触发，因为 HitPaw 会把框里的运动区域也轻微重绘。2026-09-29 那条片子 2572 帧全被标上了。v1.3.0 起它被 `composite-captions.py` 取代。
 
 **`conform-vertical.sh` 不覆盖已存在的成品。** 重跑前先删旧的 FINAL，否则后面验收的是旧文件。
 
@@ -122,10 +130,12 @@ A skill for Claude Code and Codex that drives HitPaw Edimakor on macOS to remove
 subtitles and verify the result. It locates captions with a full-height per-row edge scan rather
 than by eye, drives the app in background mode so the user keeps their mouse, recovers finished
 jobs from the local log even when the app's own download failed, and proves coverage by re-running
-the same scan on the output. Captions are pasted back through a per-frame row mask that unions the
-edge scan with a source-vs-result difference, because the edge scan alone misses unstroked white
-captions. Every finished file is vertical 1080x1920: the result is first restored to
-the source resolution (a feathered band composite, or a disclosed full-frame upscale), then fit-scaled
+the same scan on the output. Captions are pasted back inside one feathered rectangle per confirmed
+caption, drafted from the loose edge scan (bands persisting 8+ frames, start and end refined from
+per-frame edge counts) and sized from the source-vs-result difference within that caption's frames.
+The Y, U and V planes are blended directly with the raw input colour-tagged, and acceptance requires
+the PSNR outside the patches to match a plain re-encode of the source. Every finished file is vertical 1080x1920: the result is first restored to
+the source resolution (a per-caption feathered composite, or a disclosed full-frame upscale), then fit-scaled
 onto 1080x1920 with black padding when the aspect is not 9:16, never cropped or stretched, with
 audio copied and every frame kept; the verify script fails on any other size. HitPaw is a paid
 dependency; this skill never purchases credits.
